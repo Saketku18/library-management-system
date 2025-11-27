@@ -1,0 +1,4 @@
+library.db
+sqlite3.exe
+__pycache__/
+*.pyc
