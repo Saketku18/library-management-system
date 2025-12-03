@@ -1,254 +1,540 @@
 from flask import Flask, render_template_string, request, jsonify
 import sqlite3
-from datetime import datetime, timedelta
+from datetime import datetime, date, timedelta
 
 app = Flask(__name__)
 
-HTML = '''<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Library Management</title><style>
-*{margin:0;padding:0;box-sizing:border-box}body{font-family:Arial,sans-serif;background:linear-gradient(135deg,#667eea 0%,#764ba2 100%);min-height:100vh;padding:20px}
-.container{max-width:1200px;margin:0 auto}header{background:#fff;padding:25px;border-radius:12px;box-shadow:0 5px 20px rgba(0,0,0,.2);margin-bottom:20px;text-align:center}
-h1{color:#667eea;font-size:2em}.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:15px;margin-bottom:20px}
-.stat-card{background:#fff;padding:20px;border-radius:10px;box-shadow:0 3px 10px rgba(0,0,0,.1);text-align:center}.stat-number{font-size:2em;font-weight:bold;color:#667eea}
-.stat-label{color:#666;font-size:.85em;margin-top:5px}.main{display:grid;grid-template-columns:200px 1fr;gap:20px}
-.sidebar{background:#fff;padding:15px;border-radius:10px;box-shadow:0 3px 10px rgba(0,0,0,.1);height:fit-content}
-.nav-btn{width:100%;padding:12px;margin-bottom:8px;border:none;background:#f0f0f0;border-radius:6px;cursor:pointer;text-align:left;transition:all .3s}
-.nav-btn:hover,.nav-btn.active{background:#667eea;color:#fff}.content{background:#fff;padding:25px;border-radius:10px;box-shadow:0 3px 10px rgba(0,0,0,.1)}
-.section{display:none}.section.active{display:block}.form-group{margin-bottom:15px}label{display:block;margin-bottom:5px;font-weight:500}
-input,select{width:100%;padding:10px;border:2px solid #e0e0e0;border-radius:6px;font-size:1em}input:focus,select:focus{outline:none;border-color:#667eea}
-.btn{padding:10px 25px;border:none;border-radius:6px;cursor:pointer;font-size:1em;transition:all .3s}.btn-primary{background:#667eea;color:#fff}
-.btn-primary:hover{background:#5568d3}table{width:100%;border-collapse:collapse;margin-top:15px}th,td{padding:12px;text-align:left;border-bottom:1px solid #e0e0e0}
-th{background:#f8f9fa;color:#667eea;font-weight:600}tr:hover{background:#f8f9fa}.badge{padding:4px 10px;border-radius:15px;font-size:.85em}
-.badge-success{background:#d4edda;color:#155724}.badge-danger{background:#f8d7da;color:#721c24}.alert{padding:12px;border-radius:6px;margin-bottom:15px}
-.alert-success{background:#d4edda;color:#155724}.alert-error{background:#f8d7da;color:#721c24}
-@media (max-width:768px){.main{grid-template-columns:1fr}.stats{grid-template-columns:1fr 1fr}}
-</style></head><body>
-<div class="container"><header><h1>📚 Library Management System</h1></header>
-<div class="stats">
-<div class="stat-card"><div class="stat-number" id="totalBooks">0</div><div class="stat-label">Total Books</div></div>
-<div class="stat-card"><div class="stat-number" id="totalMembers">0</div><div class="stat-label">Members</div></div>
-<div class="stat-card"><div class="stat-number" id="borrowed">0</div><div class="stat-label">Borrowed</div></div>
-<div class="stat-card"><div class="stat-number" id="overdue">0</div><div class="stat-label">Overdue</div></div>
-</div>
-<div class="main"><div class="sidebar">
-<button class="nav-btn active" onclick="showSection('books')">📖 Books</button>
-<button class="nav-btn" onclick="showSection('addBook')">➕ Add Book</button>
-<button class="nav-btn" onclick="showSection('members')">👥 Members</button>
-<button class="nav-btn" onclick="showSection('addMember')">➕ Add Member</button>
-<button class="nav-btn" onclick="showSection('borrow')">📤 Borrow</button>
-<button class="nav-btn" onclick="showSection('return')">📥 Return</button>
-</div>
-<div class="content">
-<div id="books" class="section active"><h2>All Books</h2><table><thead><tr><th>ID</th><th>Title</th><th>Author</th><th>ISBN</th><th>Available</th></tr></thead>
-<tbody id="booksTable"></tbody></table></div>
-<div id="addBook" class="section"><h2>Add New Book</h2><div id="bookAlert"></div><form onsubmit="addBook(event)">
-<div class="form-group"><label>Title *</label><input type="text" id="bookTitle" required></div>
-<div class="form-group"><label>Author *</label><input type="text" id="bookAuthor" required></div>
-<div class="form-group"><label>ISBN *</label><input type="text" id="bookISBN" required></div>
-<div class="form-group"><label>Year *</label><input type="number" id="bookYear" required></div>
-<div class="form-group"><label>Category *</label><input type="text" id="bookCategory" required></div>
-<div class="form-group"><label>Copies *</label><input type="number" id="bookCopies" value="1" required></div>
-<button type="submit" class="btn btn-primary">Add Book</button></form></div>
-<div id="members" class="section"><h2>All Members</h2><table><thead><tr><th>ID</th><th>Name</th><th>Email</th><th>Phone</th><th>Status</th></tr></thead>
-<tbody id="membersTable"></tbody></table></div>
-<div id="addMember" class="section"><h2>Add New Member</h2><div id="memberAlert"></div><form onsubmit="addMember(event)">
-<div class="form-group"><label>Name *</label><input type="text" id="memberName" required></div>
-<div class="form-group"><label>Email *</label><input type="email" id="memberEmail" required></div>
-<div class="form-group"><label>Phone *</label><input type="tel" id="memberPhone" required></div>
-<div class="form-group"><label>Address</label><input type="text" id="memberAddress"></div>
-<button type="submit" class="btn btn-primary">Add Member</button></form></div>
-<div id="borrow" class="section"><h2>Borrow a Book</h2><div id="borrowAlert"></div><form onsubmit="borrowBook(event)">
-<div class="form-group"><label>Member ID *</label><input type="number" id="borrowMember" required></div>
-<div class="form-group"><label>Book ID *</label><input type="number" id="borrowBookId" required></div>
-<div class="form-group"><label>Days *</label><input type="number" id="borrowDays" value="14" required></div>
-<button type="submit" class="btn btn-primary">Borrow Book</button></form></div>
-<div id="return" class="section"><h2>Return a Book</h2><div id="returnAlert"></div><form onsubmit="returnBook(event)">
-<div class="form-group"><label>Transaction ID *</label><input type="number" id="returnTransaction" required></div>
-<button type="submit" class="btn btn-primary">Return Book</button></form></div>
-</div></div></div>
-<script>
-function showSection(id){document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
-document.querySelectorAll('.nav-btn').forEach(b=>b.classList.remove('active'));
-document.getElementById(id).classList.add('active');event.target.classList.add('active');}
-async function loadStats(){const r=await fetch('/api/stats');const d=await r.json();
-document.getElementById('totalBooks').textContent=d.total_book_titles||0;
-document.getElementById('totalMembers').textContent=d.active_members||0;
-document.getElementById('borrowed').textContent=d.borrowed_books||0;
-document.getElementById('overdue').textContent=d.overdue_books||0;}
-async function loadBooks(){const r=await fetch('/api/books');const d=await r.json();
-document.getElementById('booksTable').innerHTML=d.map(b=>`<tr><td>${b[0]}</td><td>${b[1]}</td><td>${b[2]}</td><td>${b[3]}</td>
-<td><span class="badge ${b[7]>0?'badge-success':'badge-danger'}">${b[7]}/${b[6]}</span></td></tr>`).join('');}
-async function loadMembers(){const r=await fetch('/api/members');const d=await r.json();
-document.getElementById('membersTable').innerHTML=d.map(m=>`<tr><td>${m[0]}</td><td>${m[1]}</td><td>${m[2]}</td><td>${m[3]}</td>
-<td><span class="badge badge-success">${m[6]}</span></td></tr>`).join('');}
-async function addBook(e){e.preventDefault();const data={title:document.getElementById('bookTitle').value,
-author:document.getElementById('bookAuthor').value,isbn:document.getElementById('bookISBN').value,
-year:document.getElementById('bookYear').value,category:document.getElementById('bookCategory').value,
-copies:document.getElementById('bookCopies').value};
-const r=await fetch('/api/books',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
-const res=await r.json();document.getElementById('bookAlert').innerHTML=
-`<div class="alert ${res.success?'alert-success':'alert-error'}">${res.message}</div>`;
-if(res.success){e.target.reset();loadBooks();loadStats();}setTimeout(()=>document.getElementById('bookAlert').innerHTML='',3000);}
-async function addMember(e){e.preventDefault();const data={name:document.getElementById('memberName').value,
-email:document.getElementById('memberEmail').value,phone:document.getElementById('memberPhone').value,
-address:document.getElementById('memberAddress').value};
-const r=await fetch('/api/members',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
-const res=await r.json();document.getElementById('memberAlert').innerHTML=
-`<div class="alert ${res.success?'alert-success':'alert-error'}">${res.message}</div>`;
-if(res.success){e.target.reset();loadMembers();loadStats();}setTimeout(()=>document.getElementById('memberAlert').innerHTML='',3000);}
-async function borrowBook(e){e.preventDefault();const data={book_id:document.getElementById('borrowBookId').value,
-member_id:document.getElementById('borrowMember').value,days:document.getElementById('borrowDays').value};
-const r=await fetch('/api/borrow',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
-const res=await r.json();document.getElementById('borrowAlert').innerHTML=
-`<div class="alert ${res.success?'alert-success':'alert-error'}">${res.message}</div>`;
-if(res.success){e.target.reset();loadBooks();loadStats();}setTimeout(()=>document.getElementById('borrowAlert').innerHTML='',3000);}
-async function returnBook(e){e.preventDefault();const data={transaction_id:document.getElementById('returnTransaction').value};
-const r=await fetch('/api/return',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data)});
-const res=await r.json();document.getElementById('returnAlert').innerHTML=
-`<div class="alert ${res.success?'alert-success':'alert-error'}">${res.message}</div>`;
-if(res.success){e.target.reset();loadBooks();loadStats();}setTimeout(()=>document.getElementById('returnAlert').innerHTML='',3000);}
-window.onload=()=>{loadStats();loadBooks();loadMembers();};
-</script></body></html>'''
+# ===================== DB HELPERS =====================
+
+DB_NAME = "library.db"
 
 def get_db():
-    conn = sqlite3.connect('library.db')
-    return conn
+    return sqlite3.connect(DB_NAME)
 
 def init_db():
     conn = get_db()
     c = conn.cursor()
-    c.execute("""CREATE TABLE IF NOT EXISTS books (
-        book_id INTEGER PRIMARY KEY AUTOINCREMENT, title TEXT NOT NULL, author TEXT NOT NULL,
-        isbn TEXT UNIQUE NOT NULL, publication_year INTEGER, category TEXT,
-        total_copies INTEGER DEFAULT 1, available_copies INTEGER DEFAULT 1,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)""")
-    c.execute("""CREATE TABLE IF NOT EXISTS members (
-        member_id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, email TEXT UNIQUE NOT NULL,
-        phone TEXT, address TEXT, membership_date DATE DEFAULT CURRENT_DATE, status TEXT DEFAULT 'active')""")
-    c.execute("""CREATE TABLE IF NOT EXISTS transactions (
-        transaction_id INTEGER PRIMARY KEY AUTOINCREMENT, book_id INTEGER NOT NULL, member_id INTEGER NOT NULL,
-        borrow_date DATE NOT NULL, due_date DATE NOT NULL, return_date DATE, fine_amount REAL DEFAULT 0,
-        status TEXT DEFAULT 'borrowed', FOREIGN KEY (book_id) REFERENCES books(book_id),
-        FOREIGN KEY (member_id) REFERENCES members(member_id))""")
+
+    # 1. Branch
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS branch (
+            branch_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            manager_id INTEGER,
+            branch_address TEXT,
+            contact_no TEXT
+        )
+    """)
+
+    # 2. Employee
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS employee (
+            emp_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            emp_name TEXT,
+            position TEXT,
+            salary REAL,
+            branch_id INTEGER
+        )
+    """)
+
+    # 3. Books
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS books (
+            isbn TEXT PRIMARY KEY,
+            book_title TEXT,
+            category TEXT,
+            rental_price REAL,
+            status TEXT DEFAULT 'yes',
+            author TEXT,
+            publisher TEXT
+        )
+    """)
+
+    # 4. Members
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS members (
+            member_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            member_name TEXT,
+            member_address TEXT,
+            reg_date DATE DEFAULT CURRENT_DATE
+        )
+    """)
+
+    # 5. Issued_Status
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS issued_status (
+            issued_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            issued_member_id INTEGER,
+            issued_book_name TEXT,
+            issued_date DATE,
+            issued_book_isbn TEXT,
+            issued_emp_id INTEGER
+        )
+    """)
+
+    # 6. Return_Status
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS return_status (
+            return_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            issued_id INTEGER,
+            return_book_name TEXT,
+            return_date DATE,
+            return_book_isbn TEXT
+        )
+    """)
+
     conn.commit()
     conn.close()
 
-@app.route('/')
-def index():
-    return render_template_string(HTML)
+# ===================== STATS API =====================
 
-@app.route('/api/stats')
-def get_stats():
+@app.route("/api/stats")
+def api_stats():
     conn = get_db()
     c = conn.cursor()
-    c.execute("SELECT COUNT(*), SUM(total_copies) FROM books")
-    r = c.fetchone()
-    stats = {'total_book_titles': r[0] or 0, 'total_book_copies': r[1] or 0}
-    c.execute("SELECT COUNT(*) FROM members WHERE status='active'")
-    stats['active_members'] = c.fetchone()[0]
-    c.execute("SELECT COUNT(*) FROM transactions WHERE status='borrowed'")
-    stats['borrowed_books'] = c.fetchone()[0]
-    today = datetime.now().date()
-    c.execute("SELECT COUNT(*) FROM transactions WHERE status='borrowed' AND due_date<?", (today,))
-    stats['overdue_books'] = c.fetchone()[0]
+
+    def count(table):
+        return c.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+
+    stats = {
+        "branch":   count("branch"),
+        "employee": count("employee"),
+        "books":    count("books"),
+        "members":  count("members"),
+        "issued":   count("issued_status"),
+        "returns":  count("return_status")
+    }
     conn.close()
     return jsonify(stats)
 
-@app.route('/api/books')
-def get_books():
+# ===================== TABLE VIEW API =====================
+
+@app.route("/api/table/<name>")
+def api_table(name):
     conn = get_db()
     c = conn.cursor()
-    c.execute("SELECT * FROM books")
-    books = c.fetchall()
-    conn.close()
-    return jsonify(books)
 
-@app.route('/api/books', methods=['POST'])
-def add_book():
+    mapping = {
+        "branch":   "branch",
+        "employee": "employee",
+        "books":    "books",
+        "members":  "members",
+        "issued":   "issued_status",
+        "returns":  "return_status"
+    }
+
+    table = mapping.get(name)
+    if not table:
+        conn.close()
+        return jsonify([])
+
+    c.execute(f"SELECT * FROM {table}")
+    rows = c.fetchall()
+    cols = [col[0] for col in c.description]
+    conn.close()
+
+    data = [dict(zip(cols, r)) for r in rows]
+    return jsonify(data)
+
+# ===================== ADD / ISSUE / RETURN APIs =====================
+
+@app.route("/api/add/branch", methods=["POST"])
+def api_add_branch():
+    data = request.json
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("""
+        INSERT INTO branch (manager_id, branch_address, contact_no)
+        VALUES (?, ?, ?)
+    """, (data["manager_id"], data["branch_address"], data["contact_no"]))
+    conn.commit()
+    conn.close()
+    return jsonify(success=True, message="Branch added")
+
+@app.route("/api/add/employee", methods=["POST"])
+def api_add_employee():
+    data = request.json
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("""
+        INSERT INTO employee (emp_name, position, salary, branch_id)
+        VALUES (?, ?, ?, ?)
+    """, (data["emp_name"], data["position"], data["salary"], data["branch_id"]))
+    conn.commit()
+    conn.close()
+    return jsonify(success=True, message="Employee added")
+
+@app.route("/api/add/book", methods=["POST"])
+def api_add_book():
     data = request.json
     conn = get_db()
     c = conn.cursor()
     try:
-        c.execute("""INSERT INTO books (title, author, isbn, publication_year, category, total_copies, available_copies)
-            VALUES (?, ?, ?, ?, ?, ?, ?)""", (data['title'], data['author'], data['isbn'], 
-            data['year'], data['category'], data['copies'], data['copies']))
+        c.execute("""
+            INSERT INTO books (isbn, book_title, category, rental_price, status, author, publisher)
+            VALUES (?, ?, ?, ?, 'yes', ?, ?)
+        """, (
+            data["isbn"],
+            data["book_title"],
+            data["category"],
+            data["rental_price"],
+            data["author"],
+            data["publisher"]
+        ))
         conn.commit()
         conn.close()
-        return jsonify({'success': True, 'message': 'Book added successfully!'})
-    except:
+        return jsonify(success=True, message="Book added")
+    except sqlite3.IntegrityError:
         conn.close()
-        return jsonify({'success': False, 'message': 'Error: ISBN already exists!'})
+        return jsonify(success=False, message="ISBN already exists")
 
-@app.route('/api/members')
-def get_members():
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("SELECT * FROM members")
-    members = c.fetchall()
-    conn.close()
-    return jsonify(members)
-
-@app.route('/api/members', methods=['POST'])
-def add_member():
+@app.route("/api/add/member", methods=["POST"])
+def api_add_member():
     data = request.json
     conn = get_db()
     c = conn.cursor()
-    try:
-        c.execute("INSERT INTO members (name, email, phone, address) VALUES (?, ?, ?, ?)",
-            (data['name'], data['email'], data['phone'], data['address']))
-        conn.commit()
-        conn.close()
-        return jsonify({'success': True, 'message': 'Member added successfully!'})
-    except:
-        conn.close()
-        return jsonify({'success': False, 'message': 'Error: Email already exists!'})
-
-@app.route('/api/borrow', methods=['POST'])
-def borrow_book():
-    data = request.json
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("SELECT available_copies FROM books WHERE book_id=?", (data['book_id'],))
-    r = c.fetchone()
-    if not r or r[0] <= 0:
-        conn.close()
-        return jsonify({'success': False, 'message': 'Book not available!'})
-    borrow_date = datetime.now().date()
-    due_date = borrow_date + timedelta(days=int(data['days']))
-    c.execute("INSERT INTO transactions (book_id, member_id, borrow_date, due_date) VALUES (?, ?, ?, ?)",
-        (data['book_id'], data['member_id'], borrow_date, due_date))
-    c.execute("UPDATE books SET available_copies=available_copies-1 WHERE book_id=?", (data['book_id'],))
+    c.execute("""
+        INSERT INTO members (member_name, member_address)
+        VALUES (?, ?)
+    """, (data["member_name"], data["member_address"]))
     conn.commit()
     conn.close()
-    return jsonify({'success': True, 'message': f'Book borrowed! Due: {due_date}'})
+    return jsonify(success=True, message="Member added")
 
-@app.route('/api/return', methods=['POST'])
-def return_book():
+@app.route("/api/add/issue", methods=["POST"])
+def api_add_issue():
     data = request.json
     conn = get_db()
     c = conn.cursor()
-    c.execute("SELECT book_id, due_date, status FROM transactions WHERE transaction_id=?", (data['transaction_id'],))
-    r = c.fetchone()
-    if not r:
+
+    # 1. check availability
+    row = c.execute("SELECT status, book_title FROM books WHERE isbn = ?", (data["issued_book_isbn"],)).fetchone()
+    if not row:
         conn.close()
-        return jsonify({'success': False, 'message': 'Transaction not found!'})
-    if r[2] == 'returned':
+        return jsonify(success=False, message="Book not found")
+    status, title = row
+    if status != "yes":
         conn.close()
-        return jsonify({'success': False, 'message': 'Book already returned!'})
-    return_date = datetime.now().date()
-    due_date_obj = datetime.strptime(r[1], '%Y-%m-%d').date()
-    days_overdue = (return_date - due_date_obj).days
-    fine = max(0, days_overdue * 5)
-    c.execute("UPDATE transactions SET return_date=?, fine_amount=?, status='returned' WHERE transaction_id=?",
-        (return_date, fine, data['transaction_id']))
-    c.execute("UPDATE books SET available_copies=available_copies+1 WHERE book_id=?", (r[0],))
+        return jsonify(success=False, message="Book not available")
+
+    issued_date = date.today().isoformat()
+    c.execute("""
+        INSERT INTO issued_status
+        (issued_member_id, issued_book_name, issued_date, issued_book_isbn, issued_emp_id)
+        VALUES (?, ?, ?, ?, ?)
+    """, (
+        data["issued_member_id"],
+        title,
+        issued_date,
+        data["issued_book_isbn"],
+        data["issued_emp_id"]
+    ))
+    c.execute("UPDATE books SET status = 'no' WHERE isbn = ?", (data["issued_book_isbn"],))
     conn.commit()
     conn.close()
-    msg = f'Book returned! Fine: ₹{fine}' if fine > 0 else 'Book returned successfully!'
-    return jsonify({'success': True, 'message': msg})
+    return jsonify(success=True, message="Book issued")
 
-if __name__ == '__main__':
+@app.route("/api/add/return", methods=["POST"])
+def api_add_return():
+    data = request.json
+    issued_id = data["issued_id"]
+
+    conn = get_db()
+    c = conn.cursor()
+
+    row = c.execute("""
+        SELECT issued_book_name, issued_book_isbn, issued_date
+        FROM issued_status
+        WHERE issued_id = ?
+    """, (issued_id,)).fetchone()
+
+    if not row:
+        conn.close()
+        return jsonify(success=False, message="Invalid Issued ID")
+
+    book_name, isbn, issued_date_str = row
+    return_date = date.today().isoformat()
+
+    c.execute("""
+        INSERT INTO return_status
+        (issued_id, return_book_name, return_date, return_book_isbn)
+        VALUES (?, ?, ?, ?)
+    """, (issued_id, book_name, return_date, isbn))
+
+    c.execute("UPDATE books SET status = 'yes' WHERE isbn = ?", (isbn,))
+    conn.commit()
+    conn.close()
+    return jsonify(success=True, message="Book returned")
+
+# ===================== UI =====================
+
+HTML = """
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>LibraFlow - Library Management System</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:Arial,Helvetica,sans-serif;background:linear-gradient(135deg,#667eea,#764ba2);min-height:100vh;padding:20px}
+    .wrapper{max-width:1200px;margin:0 auto}
+    header{background:#fff;padding:18px;border-radius:16px;text-align:center;font-size:26px;font-weight:bold;color:#667eea;margin-bottom:18px}
+    .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:18px}
+    .stat-card{background:#fff;border-radius:12px;padding:12px;text-align:center;cursor:pointer;box-shadow:0 3px 8px rgba(0,0,0,.1);transition:.2s}
+    .stat-card:hover{transform:translateY(-2px);box-shadow:0 6px 14px rgba(0,0,0,.15)}
+    .stat-title{font-size:14px;color:#555}
+    .stat-number{font-size:22px;font-weight:bold;color:#333;margin-top:4px}
+    .layout{display:grid;grid-template-columns:220px 1fr;gap:14px}
+    .sidebar{background:#fff;border-radius:12px;padding:12px;box-shadow:0 3px 8px rgba(0,0,0,.1)}
+    .nav-btn{width:100%;padding:10px;margin:5px 0;border:none;border-radius:8px;background:#f1f1f1;font-weight:600;cursor:pointer;transition:.2s}
+    .nav-btn:hover{background:#e0e0ff}
+    .content{background:#fff;border-radius:12px;padding:18px;box-shadow:0 3px 8px rgba(0,0,0,.1)}
+    .form-section{display:none}
+    .form-section.active{display:block}
+    h2{margin-bottom:10px}
+    input{width:100%;padding:8px;margin:4px 0 8px 0;border-radius:6px;border:1px solid #ccc}
+    .btn-primary{padding:8px 16px;background:#667eea;color:#fff;border:none;border-radius:8px;cursor:pointer;margin-top:4px}
+    .btn-primary:hover{background:#5562d3}
+    #tableView{margin-top:18px;overflow-x:auto}
+    table{width:100%;border-collapse:collapse;margin-top:8px}
+    th,td{padding:8px;border-bottom:1px solid #eee;text-align:left;font-size:14px}
+    th{background:#f6f6f6}
+  </style>
+</head>
+<body>
+<div class="wrapper">
+  <header>📚 LibraFlow - Library Management System</header>
+
+  <div class="stats">
+    <div class="stat-card" onclick="loadTable('branch')">
+      <div class="stat-title">Branches</div>
+      <div class="stat-number" id="stat-branch">0</div>
+    </div>
+    <div class="stat-card" onclick="loadTable('employee')">
+      <div class="stat-title">Employees</div>
+      <div class="stat-number" id="stat-employee">0</div>
+    </div>
+    <div class="stat-card" onclick="loadTable('books')">
+      <div class="stat-title">Books</div>
+      <div class="stat-number" id="stat-books">0</div>
+    </div>
+    <div class="stat-card" onclick="loadTable('members')">
+      <div class="stat-title">Members</div>
+      <div class="stat-number" id="stat-members">0</div>
+    </div>
+    <div class="stat-card" onclick="loadTable('issued')">
+      <div class="stat-title">Issued Records</div>
+      <div class="stat-number" id="stat-issued">0</div>
+    </div>
+    <div class="stat-card" onclick="loadTable('returns')">
+      <div class="stat-title">Return Records</div>
+      <div class="stat-number" id="stat-returns">0</div>
+    </div>
+  </div>
+
+  <div class="layout">
+    <div class="sidebar">
+      <button class="nav-btn" onclick="showForm('form-branch')">➕ Add Branch</button>
+      <button class="nav-btn" onclick="showForm('form-employee')">➕ Add Employee</button>
+      <button class="nav-btn" onclick="showForm('form-book')">➕ Add Book</button>
+      <button class="nav-btn" onclick="showForm('form-member')">➕ Add Member</button>
+      <button class="nav-btn" onclick="showForm('form-issue')">📤 Issue Book</button>
+      <button class="nav-btn" onclick="showForm('form-return')">📥 Return Book</button>
+    </div>
+
+    <div class="content">
+      <!-- Forms -->
+      <div id="form-branch" class="form-section active">
+        <h2>Add Branch</h2>
+        <input id="branch-manager" placeholder="Manager ID">
+        <input id="branch-address" placeholder="Branch Address">
+        <input id="branch-contact" placeholder="Contact No">
+        <button class="btn-primary" onclick="addBranch()">Add Branch</button>
+      </div>
+
+      <div id="form-employee" class="form-section">
+        <h2>Add Employee</h2>
+        <input id="emp-name" placeholder="Employee Name">
+        <input id="emp-position" placeholder="Position">
+        <input id="emp-salary" placeholder="Salary">
+        <input id="emp-branch" placeholder="Branch ID">
+        <button class="btn-primary" onclick="addEmployee()">Add Employee</button>
+      </div>
+
+      <div id="form-book" class="form-section">
+        <h2>Add Book</h2>
+        <input id="book-isbn" placeholder="ISBN">
+        <input id="book-title" placeholder="Book Title">
+        <input id="book-category" placeholder="Category">
+        <input id="book-rental" placeholder="Rental Price">
+        <input id="book-author" placeholder="Author">
+        <input id="book-publisher" placeholder="Publisher">
+        <button class="btn-primary" onclick="addBook()">Add Book</button>
+      </div>
+
+      <div id="form-member" class="form-section">
+        <h2>Add Member</h2>
+        <input id="member-name" placeholder="Member Name">
+        <input id="member-address" placeholder="Member Address">
+        <button class="btn-primary" onclick="addMember()">Add Member</button>
+      </div>
+
+      <div id="form-issue" class="form-section">
+        <h2>Issue Book</h2>
+        <input id="issue-member" placeholder="Member ID">
+        <input id="issue-isbn" placeholder="Book ISBN">
+        <input id="issue-emp" placeholder="Employee ID">
+        <button class="btn-primary" onclick="issueBook()">Issue Book</button>
+      </div>
+
+      <div id="form-return" class="form-section">
+        <h2>Return Book</h2>
+        <input id="return-issued" placeholder="Issued ID">
+        <button class="btn-primary" onclick="returnBook()">Return Book</button>
+      </div>
+
+      <!-- Table view area -->
+      <div id="tableView"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+async function loadStats(){
+  const res = await fetch('/api/stats');
+  const d = await res.json();
+  document.getElementById('stat-branch').textContent   = d.branch   || 0;
+  document.getElementById('stat-employee').textContent = d.employee || 0;
+  document.getElementById('stat-books').textContent    = d.books    || 0;
+  document.getElementById('stat-members').textContent  = d.members  || 0;
+  document.getElementById('stat-issued').textContent   = d.issued   || 0;
+  document.getElementById('stat-returns').textContent  = d.returns  || 0;
+}
+
+function showForm(id){
+  document.querySelectorAll('.form-section').forEach(f => f.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  document.getElementById('tableView').innerHTML = "";  // clear table when switching forms
+}
+
+async function loadTable(name){
+
+  // ✅ HIDE ALL FORMS WHEN TABLE OPENS
+  document.querySelectorAll('.form-section')
+    .forEach(f => f.classList.remove('active'));
+
+  const res = await fetch('/api/table/' + name);
+  const data = await res.json();
+  const container = document.getElementById('tableView');
+
+  if(!data || data.length === 0){
+    container.innerHTML = "<h3>No records found</h3>";
+    return;
+  }
+  const cols = Object.keys(data[0]);
+  let displayName = {
+  branch: "Branches",
+  employee: "Employees",
+  books: "Books",
+  members: "Members",
+  issued: "Issued Records",
+  returned: "Return Records"
+};
+let html = "<h2>" + (displayName[name] || name) + "</h2>";
+
+  html += "<table><thead><tr>";
+
+  cols.forEach(c => html += "<th>" + c + "</th>");
+  html += "</tr></thead><tbody>";
+
+  data.forEach(row => {
+    html += "<tr>";
+    cols.forEach(c => html += "<td>" + (row[c]===null?'':row[c]) + "</td>");
+    html += "</tr>";
+  });
+
+  html += "</tbody></table>";
+  container.innerHTML = html;
+}
+
+async function addBranch(){
+  const payload = {
+    manager_id: document.getElementById('branch-manager').value,
+    branch_address: document.getElementById('branch-address').value,
+    contact_no: document.getElementById('branch-contact').value
+  };
+  await fetch('/api/add/branch',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  loadStats();
+}
+
+async function addEmployee(){
+  const payload = {
+    emp_name: document.getElementById('emp-name').value,
+    position: document.getElementById('emp-position').value,
+    salary: document.getElementById('emp-salary').value,
+    branch_id: document.getElementById('emp-branch').value
+  };
+  await fetch('/api/add/employee',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  loadStats();
+}
+
+async function addBook(){
+  const payload = {
+    isbn: document.getElementById('book-isbn').value,
+    book_title: document.getElementById('book-title').value,
+    category: document.getElementById('book-category').value,
+    rental_price: document.getElementById('book-rental').value,
+    author: document.getElementById('book-author').value,
+    publisher: document.getElementById('book-publisher').value
+  };
+  const res = await fetch('/api/add/book',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  const out = await res.json();
+  alert(out.message);
+  loadStats();
+}
+
+async function addMember(){
+  const payload = {
+    member_name: document.getElementById('member-name').value,
+    member_address: document.getElementById('member-address').value
+  };
+  await fetch('/api/add/member',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  loadStats();
+}
+
+async function issueBook(){
+  const payload = {
+    issued_member_id: document.getElementById('issue-member').value,
+    issued_book_isbn: document.getElementById('issue-isbn').value,
+    issued_emp_id: document.getElementById('issue-emp').value
+  };
+  const res = await fetch('/api/add/issue',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  const out = await res.json();
+  alert(out.message);
+  loadStats();
+}
+
+async function returnBook(){
+  const payload = {
+    issued_id: document.getElementById('return-issued').value
+  };
+  const res = await fetch('/api/add/return',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+  const out = await res.json();
+  alert(out.message);
+  loadStats();
+}
+
+// initial load
+loadStats();
+</script>
+
+</body>
+</html>
+"""
+
+@app.route("/")
+def index():
+    return render_template_string(HTML)
+
+if __name__ == "__main__":
     init_db()
-    print("🚀 Server starting at http://localhost:5000")
     app.run(debug=True)
